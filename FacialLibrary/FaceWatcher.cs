@@ -25,7 +25,7 @@
     {
         public event EventHandler<FaceCountChangedEventArgs> InFrameFaceCountChanged;
 
-        public FaceWatcher(CameraDeviceFinder deviceFinder,
+        public FaceWatcher(MediaDeviceFilter deviceFinder,
             bool ignoreSyncContext = false)
         {
             if (!ignoreSyncContext)
@@ -45,12 +45,12 @@
             try
             {
                 // Which device are we wanting to pull frames from?
-                var device = await this.deviceFinder.FindSingleCameraAsync();
+                var deviceId = await this.deviceFinder.GetDeviceIdForFilterAsync();
 
                 MediaCaptureInitializationSettings initialisationSettings = new MediaCaptureInitializationSettings()
                 {
                     StreamingCaptureMode = StreamingCaptureMode.Video,
-                    VideoDeviceId = device.Id,
+                    VideoDeviceId = deviceId,
                     // This turns out to be more important than I thought if I want a SoftwareBitmap
                     // back on each frame
                     MemoryPreference = MediaCaptureMemoryPreference.Cpu
@@ -60,19 +60,13 @@
                 {
                     await mediaCapture.InitializeAsync(initialisationSettings);
 
+                    var detectorFormatHints = FaceDetector.GetSupportedBitmapPixelFormats();
+
+                    var frameSource = await this.deviceFinder.GetMediaFrameSourceForFilterAsync(mediaCapture,
+                        detectorFormatHints);
+
                     // Get a frame reader.
-                    using (var frameReader = await mediaCapture.CreateFrameReaderAsync
-                        (
-                            mediaCapture.FrameSources.First(
-                                fs =>
-                                (
-                                    (fs.Value.Info.DeviceInformation.Id == device.Id) &&
-                                    (fs.Value.Info.MediaStreamType == MediaStreamType.VideoPreview) &&
-                                    (fs.Value.Info.SourceKind == MediaFrameSourceKind.Color)
-                                )
-                            ).Value
-                        )
-                    )
+                    using (var frameReader = await mediaCapture.CreateFrameReaderAsync(frameSource))
                     {
                         var faceDetector = await FaceDetector.CreateAsync();
                         var faceDetectorFormat = FaceDetector.GetSupportedBitmapPixelFormats().First();
@@ -90,31 +84,33 @@
                                     {
                                         lastFrameTime = frame.SystemRelativeTime;
 
-                                        var originalBitmap = frame.VideoMediaFrame.SoftwareBitmap;
-                                        var bitmapForDetection = originalBitmap;
-
-                                        if (originalBitmap != null)
+                                        using (var originalBitmap = frame.VideoMediaFrame.SoftwareBitmap)
                                         {
-                                            // Don't really need to call this every frame but...
-                                            if (!FaceDetector.IsBitmapPixelFormatSupported(originalBitmap.BitmapPixelFormat))
-                                            {
-                                                bitmapForDetection = SoftwareBitmap.Convert(
-                                                    originalBitmap, originalBitmap.BitmapPixelFormat);
-                                            }
-                                            // Run detection on this...
-                                            var faceResults = await faceDetector.DetectFacesAsync(
-                                                bitmapForDetection);
+                                            var bitmapForDetection = originalBitmap;
 
-                                            if (faceResults?.Count() != lastFaceCount)
+                                            if (originalBitmap != null)
                                             {
-                                                // We have work to do.
-                                                this.DispatchFaceCountChanged(faceResults.Count);
-                                                lastFaceCount = (uint)faceResults.Count();
+                                                // Don't really need to call this every frame but...
+                                                if (!FaceDetector.IsBitmapPixelFormatSupported(originalBitmap.BitmapPixelFormat))
+                                                {
+                                                    bitmapForDetection = SoftwareBitmap.Convert(
+                                                        originalBitmap, faceDetectorFormat);
+                                                }
+                                                // Run detection on this...
+                                                var faceResults = await faceDetector.DetectFacesAsync(
+                                                    bitmapForDetection);
+
+                                                if (faceResults?.Count() != lastFaceCount)
+                                                {
+                                                    // We have work to do.
+                                                    this.DispatchFaceCountChanged(faceResults.Count);
+                                                    lastFaceCount = (uint)faceResults.Count();
+                                                }
                                             }
-                                        }
-                                        if (bitmapForDetection != originalBitmap)
-                                        {
-                                            bitmapForDetection.Dispose();
+                                            if (bitmapForDetection != originalBitmap)
+                                            {
+                                                bitmapForDetection.Dispose();
+                                            }
                                         }
                                     }
                                 }
@@ -154,7 +150,7 @@
                 this, new FaceCountChangedEventArgs(count));
         }
         SynchronizationContext syncContext;
-        CameraDeviceFinder deviceFinder;
+        MediaDeviceFilter deviceFinder;
         volatile bool capturing;
     }
 }

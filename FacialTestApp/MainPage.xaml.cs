@@ -17,11 +17,9 @@
             this.CanStart = true;
 
             this.faceWatcher = new FaceWatcher(
-                new CameraDeviceFinder(
-                    deviceInformation =>
-                    {
-                        return (deviceInformation.EnclosureLocation.Panel == Windows.Devices.Enumeration.Panel.Front);
-                    }
+                new MediaDeviceFilter(
+                    deviceInformation => deviceInformation.EnclosureLocation.Panel == Windows.Devices.Enumeration.Panel.Front,
+                    format => format.VideoFormat.Width == 1280 && format.VideoFormat.Height == 720
                 )
             );
         }

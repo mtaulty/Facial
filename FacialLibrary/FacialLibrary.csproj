@@ -106,7 +106,7 @@
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="CameraDeviceFinder.cs" />
+    <Compile Include="MediaDeviceFilter.cs" />
     <Compile Include="FaceWatcher.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <EmbeddedResource Include="Properties\FacialLibrary.rd.xml" />
